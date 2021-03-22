@@ -1,0 +1,225 @@
+---
+title: "6004 Final Project"
+author: "Yuhong Fang"
+date: "11/11/2020"
+output: pdf_document
+---
+
+```{r}
+# Data Preparation
+# Read Data
+library(readxl)
+X2018 <- read_excel("2018.xlsx")
+X2019 <- read_excel("2019.xlsx")
+# Dystopia 2018:1.92 2019:1.88
+# Create Region feature for 2019 based on 2018
+library(dplyr)
+X2018 = X2018 %>% rename(Region = `Region indicator`)
+X2019 = X2019 %>% mutate(Region = Country)
+for(i in 1:156){
+  for(j in 1:156){
+    if(X2019$Country[i] == X2018$Country[j]){
+      X2019$Region[i] = X2018$Region[j]
+    }
+  }
+}
+a = 0
+k = 1
+for(i in 1:156){
+  if(X2019$Country[i] == X2019$Region[i]){
+    a[k] = i
+    k = k + 1
+  }
+}
+# Fill in region for countries in 2019 but not in 2018
+X2019$Country[a]
+X2019$Region[a] = c('Latin America and Caribbean', 'Middle East and Northern Africa', 'East Asia', 'Sub-Saharan Africa', 'Sub-Saharan Africa', 'Sub-Saharan Africa')
+
+# Check Missing Value
+sum(is.na(X2018))
+sum(is.na(X2019))
+
+# Create Rank
+X2018 = X2018 %>% mutate(Rank = 1:156)
+X2019 = X2019 %>% mutate(Rank = 1:156)
+```
+
+```{r}
+# Find the most happiness region
+table(X2019$Region[1:20]) # Centered in Western Europe and North America and ANZ
+table(X2019$Region[137:156])
+```
+```{r}
+# Find the difference from 2018 to 2019
+rank_diff = data.frame(Country = as.character(), Rank_diff = as.numeric(), rank_2018 = as.numeric(), rank_2019 = as.numeric(), region = as.character(), stringsAsFactors=FALSE)
+k = 1
+for(i in 1:156){
+  for(j in 1:156){
+    if(X2018$Country[i] == X2019$Country[j]){
+      rank_diff[k,1] = X2018$Country[i]
+      rank_diff[k,2] = X2018$Rank[i] - X2019$Rank[j]
+      rank_diff[k,3] = X2018$Rank[i]
+      rank_diff[k,4] = X2019$Rank[j]
+      rank_diff[k,5] = X2018$Region[i]
+      k = k + 1
+    }
+  }
+}
+# Rank Change List
+rank_diff = rank_diff %>% na.omit %>% arrange(Rank_diff)
+# Malaysia -45 可以做一个差值图，直观展示每个variable的变化
+rbind(X2018 %>% filter(Country=='Malaysia'), X2019 %>% filter(Country=='Malaysia'))
+# Benin 34
+rbind(X2018 %>% filter(Country=='Benin'), X2019 %>% filter(Country=='Benin'))
+rbind(X2018 %>% filter(Country=='Guinea'), X2019 %>% filter(Country=='Guinea'))
+
+# Rank decrease Top 10 Region Table
+(rank_diff[1:10,]) %>% select(region) %>% table()
+# Rank increase Top 10 Region Table
+(rank_diff [141:150,]) %>% select(region) %>% table()
+```
+
+```{r}
+# 合并起来画一个barplot比较图
+region_mean_2018 = aggregate(X2018$`Happiness score`, list(X2018$Region), mean)
+colnames(region_mean_2018) = c('Region','Happiness_Score')
+barplot(Happiness_Score~Region, data = region_mean_2018, las=2)
+
+region_mean_2019 = aggregate(X2019$`Happiness score`, list(X2019$Region), mean)
+colnames(region_mean_2019) = c('Region','Happiness_Score')
+barplot(Happiness_Score~Region, data = region_mean_2019, las=2)
+```
+
+
+```{r}
+#数据从多个维度帮助人们建立对幸福感的评分，这些维度从不同的角度解释了人们的生活的幸福程度。这些维度都与我们的生活息息相关，所以不难想象到他们之间存在着某种联系，即使他们之间存在着高线性相关性，我们也不需要将他们去除。
+boxplot(X2019[,3:9])
+cor(X2019$`Happiness score`,X2019[,3:9])
+library(corrplot)
+corrplot(cor(as.matrix(X2019[,2:9]), use="complete.obs"), method="circle",type="lower")
+plot(X2019$`Social support`, X2019$`GDP per capita`)
+# GDP, social support, health相互之间有不小的关联性，这与我预想的相同
+# 幸福感是直接通过将七个variables的数值相加得到的，这七个varaibles都经过了处理并拥有自己的weight。 通过观察数据，我们发现Dystopia拥有最大的平均值也就是weight，他占据了幸福感最大的比重。
+# 然而Dystopia和幸福感之间的关联性非常的低，说明Dystopia的变化于幸福感并没有很明显的线性关系
+# 幸福感对于GDP, social support, health有明显的线性相关性，说明这三个数值的变化对幸福感的变化影响尤为重要
+
+
+summary(lm(`Happiness score`~ . , X2019[,2:9])) # 1
+summary(lm(`Happiness score`~ . - `GDP per capita`, X2019[,2:9])) #0.9691
+summary(lm(`Happiness score`~ . - `Social support`, X2019[,2:9])) #0.9736
+summary(lm(`Happiness score`~ . - `Healthy life expectancy`, X2019[,2:9])) #0.9868
+summary(lm(`Happiness score`~ . - Generosity, X2019[,2:9])) #0.9941
+summary(lm(`Happiness score`~ . - Dystopia, X2019[,2:9])) #0.7792
+summary(lm(`Happiness score`~ `GDP per capita` + `Social support` + `Healthy life expectancy`, X2019[79:156,]))
+
+```
+
+```{r}
+#将八个数值基于1和3quantile分成高中低三个部分
+apply(X2019[,2:9], 2, quantile)
+X2019 = X2019 %>% mutate(Score_c = 'normal',
+                         Dystopia_c = 'normal',
+                         GDP_c = 'normal',
+                         Social_c = 'normal',
+                         Healthy_c = 'normal',
+                         Freedom_c = 'normal',
+                         Generosity_c = 'normal',
+                         Corruption_c = 'normal')
+for(i in 1:156){
+  if(X2019$`Happiness score`[i] <= 4.54460){
+    X2019$Score_c[i] = 'low'
+  }
+  if(X2019$`Happiness score`[i] >= 6.18425){
+    X2019$Score_c[i] = 'high'
+  }
+  if(X2019$Dystopia[i] <= 1.5127987){
+    X2019$Dystopia_c[i] = 'low'
+  }
+  if(X2019$Dystopia[i] >= 2.2676352){
+    X2019$Dystopia_c[i] = 'high'
+  }
+  if(X2019$`GDP per capita`[i] <= 0.6028953){
+    X2019$GDP_c[i] = 'low'
+  }
+  if(X2019$`GDP per capita`[i] >= 1.2321240){
+    X2019$GDP_c[i] = 'high'
+  }
+  if(X2019$`Social support`[i] <= 1.055672){
+    X2019$Social_c[i] = 'low'
+  }
+  if(X2019$`Social support`[i] >= 1.452774){
+    X2019$Social_c[i] = 'high'
+  }
+  if(X2019$`Healthy life expectancy`[i] <= 0.5480660){
+    X2019$Healthy_c[i] = 'low'
+  }
+  if(X2019$`Healthy life expectancy`[i] >= 0.8816032){
+    X2019$Healthy_c[i] = 'high'
+  }
+  if(X2019$`Freedom to make life choices`[i] <= 0.3080709){
+    X2019$Freedom_c[i] = 'low'
+  }
+  if(X2019$`Freedom to make life choices`[i] >= 0.5072969){
+    X2019$Freedom_c[i] = 'high'
+  }
+  if(X2019$Generosity[i] <= 0.1087095){
+    X2019$Generosity_c[i] = 'low'
+  }
+  if(X2019$Generosity[i] >= 0.2483720){
+    X2019$Generosity_c[i] = 'high'
+  }
+  if(X2019$`Perceptions of corruption`[i] <= 0.04709434){
+    X2019$Corruption_c[i] = 'low'
+  }
+  if(X2019$`Perceptions of corruption`[i] >= 0.14100543){
+    X2019$Corruption_c[i] = 'high'
+  }
+}
+X2019$Score_c = as.factor(X2019$Score_c)
+X2019$Dystopia_c = as.factor(X2019$Dystopia_c)
+X2019$GDP_c = as.factor(X2019$GDP_c)
+X2019$Social_c = as.factor(X2019$Social_c)
+X2019$Healthy_c = as.factor(X2019$Healthy_c)
+X2019$Freedom_c = as.factor(X2019$Freedom_c)
+X2019$Generosity_c = as.factor(X2019$Generosity_c)
+X2019$Corruption_c = as.factor(X2019$Corruption_c)
+
+pred_data = X2019[,12:19]
+pred_data = pred_data[,-2]
+
+library(caret)
+set.seed(37)
+sample <- createDataPartition(pred_data$Score_c, p=0.70, list=FALSE)
+control <- trainControl(method='repeatedcv', number=10) # 2-fold cross validation
+train = pred_data[sample[,1],]
+test = pred_data[-sample[,1],]
+svmLinear <- train(Score_c ~ ., data=train, method="svmLinear", trControl=control)
+svmLinear.pred <- predict(svmLinear, test)
+confusionMatrix(svmLinear.pred, test$Score_c) 
+roc(svmLinear)
+```
+
+```{r}
+plot(X2019$`Happiness score`, X2019$Dystopia)
+plot(X2019$`Happiness score`, X2019$`GDP per capita`) # More spread out in low score and more centered in high score GDP对高幸福度国家提升幸福度更高效
+cor((X2019 %>% filter(Score_c == 'high'))[,2], (X2019 %>% filter(Score_c == 'high'))[,3:9])
+cor((X2019 %>% filter(Score_c == 'normal'))[,2], (X2019 %>% filter(Score_c == 'normal'))[,3:9])
+cor((X2019 %>% filter(Score_c == 'low'))[,2], (X2019 %>% filter(Score_c == 'low'))[,3:9])
+
+```
+
+
+
+
+1. 哪些国家的幸福指数有明显的变化，在哪个方面变化大，是什么导致的呢
+2. 幸福指数变化的原因，幸福指数的主要组成成分是什么
+3. 区分高幸福度和低幸福度对单一variable的依赖性
+
+
+
+
+
+
+
+
+
